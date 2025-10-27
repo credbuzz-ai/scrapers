@@ -37,6 +37,7 @@ SELECT username, cookie, status, is_occupied, lock_time
 FROM configs.twitter_scrapers 
 WHERE status = 'active' 
 AND is_occupied = 0 
+AND used_in = 'scraper_credbuzz'
 AND (lock_time IS NULL OR lock_time < NOW() - INTERVAL 1 HOUR)
 ORDER BY RAND() 
 LIMIT 1

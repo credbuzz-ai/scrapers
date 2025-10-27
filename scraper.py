@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from datetime import datetime, timedelta
 from twscrape import API, gather  # pyright: ignore[reportMissingImports]
 from utils.twitter_util import (
@@ -87,9 +88,10 @@ async def scrape_tweets(api, account_handle):
     
     return tweets
 
-def build_scraper_account(username=None, cookie_string=None):
+def build_scraper_account(username=None, cookie_string=None, max_retries=5):
     """
     Build scraper account from database or use fallback values
+    Retries fetching account from database up to max_retries times
     """
     if username and cookie_string:
         return {
@@ -97,15 +99,29 @@ def build_scraper_account(username=None, cookie_string=None):
             "cookie_string": cookie_string
         }
     
-    # Try to get account from database
-    account_data = get_random_twitter_scraper_account()
-    if account_data:
-        return {
-            "username": account_data["username"],
-            "cookie_string": account_data["cookie_string"]
-        }
+    # Try to get account from database with retry logic
+    for attempt in range(max_retries):
+        try:
+            account_data = get_random_twitter_scraper_account()
+            if account_data:
+                print(f"✅ Successfully fetched account from database (attempt {attempt + 1})")
+                return {
+                    "username": account_data["username"],
+                    "cookie_string": account_data["cookie_string"]
+                }
+        except Exception as e:
+            print(f"❌ Error fetching account from database (attempt {attempt + 1}/{max_retries}): {e}")
+            
+            # If this is not the last attempt, wait before retrying
+            if attempt < max_retries - 1:
+                # Exponential backoff: 1s, 2s, 4s, 8s
+                delay = 2 ** attempt
+                print(f"⏳ Waiting {delay} seconds before retry...")
+                time.sleep(delay)
+            else:
+                print(f"❌ Failed to fetch account after {max_retries} attempts")
     
-    # Fallback to default values if database fetch fails
+    # Fallback to default values if database fetch fails after all retries
     print("⚠️ Using fallback account credentials")
     return {
         "username": DEFAULT_USERNAME,

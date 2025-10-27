@@ -1,27 +1,30 @@
-"""
-Scrape Twitter using cookies from browser console
-Method 1: Copy cookies from browser console (document.cookie)
-"""
-
 import asyncio
 from datetime import datetime, timedelta
 from twscrape import API, gather
-from utils import (
+from utils.twitter_utils import (
     map_tweet_to_enhanced_tweets,
     insert_enhanced_tweets_to_db,
     map_tweet_user_to_profile,
     insert_twitter_profiles_to_db
 )
+from utils.scraper_account_utils import (
+    get_random_twitter_scraper_account,
+    mark_account_as_occupied,
+    mark_account_as_available,
+    mark_account_as_error
+)
 
 
-DEFAULT_USERNAME = "basetillmoon"
-COOKIE_STRING = "ct0=6cda6d5edf6568366441274d918b3de1542c7d5c880c900c0a068bdd6d2ba54a0f0e883c98f1ba952b55c575950261c7bd0f622ccb5848923aba844cb00bb5e00a36304473c66c3657ecd4747c85d1db; auth_token=f8e615c2c0882493d813424f87342794c647f0a8; gt=1982245615540244612; personalization_id=v1_gUH1DI7CnEj91bOpXQQNQQ==; twid=u%3D1520825759916560385; guest_id=v1%3A176144024780219953"
+DEFAULT_USERNAME = "JoyceDavis2750"
+COOKIE_STRING = "guest_id_marketing=v1%3A174825289399544801; guest_id_ads=v1%3A174825289399544801; personalization_id='v1_uIVBMfYG6jt+ncdiynAIzA=='; guest_id=v1%3A174825289399544801; __cf_bm=W4soYfkGxLk3f2giKafgSnatDMhSURGylBqzf2OUqAo-1748252894-1.0.1.1-O6kyM7sD0zZtg6p.3oUxxxm_8t9GMFcKo.y5UMTjL.wyo0WUEjH5JMmivlb7gOtSN_Y2Ep1SloOpfdAS7RhrPgoq8Yo.pqIEyE6X1hc0uWg; gt=1926938416861606278; kdt=ea83TP1KRXM2PpkO84fddbdkbaq10f5q2TeHC6mx; twid=u%3D1652494882877976577; ct0=395642ee25e379c514a8e396086ec489988bb5959c7cf34c388afe27e616ce1237d247a464f5721bc66520c8cdca4c7ba7017689af27cdc33e9efaaa74b28b2181a0e45cd273c2f01c94876d788410ac; auth_token=ce5cd10d865c0bc20ae0e58a4d829d7c32d99686"
+
 
 def get_time_range(start_date, end_date):
     now = datetime.now()
     since = (now - timedelta(days=start_date)).strftime("%Y-%m-%d")
     until = (now - timedelta(days=end_date)).strftime("%Y-%m-%d")
     return since, until
+
 
 def build_search_query(account_handle, start_date, end_date, min_faves=None, min_replies=None, min_retweets=None):
     since, until = get_time_range(start_date, end_date)
@@ -80,15 +83,43 @@ async def scrape_tweets(api, account_handle):
     
     return tweets
 
-def build_scraper_account(username=DEFAULT_USERNAME, cookie_string=COOKIE_STRING):
+def build_scraper_account(username=None, cookie_string=None):
+    """
+    Build scraper account from database or use fallback values
+    """
+    if username and cookie_string:
+        return {
+            "username": username,
+            "cookie_string": cookie_string
+        }
+    
+    # Try to get account from database
+    account_data = get_random_twitter_scraper_account()
+    if account_data:
+        return {
+            "username": account_data["username"],
+            "cookie_string": account_data["cookie_string"]
+        }
+    
+    # Fallback to default values if database fetch fails
+    print("⚠️ Using fallback account credentials")
     return {
-        "username": username,
-        "cookie_string": cookie_string
+        "username": DEFAULT_USERNAME,
+        "cookie_string": COOKIE_STRING
     }
 
 async def main():
     api = API()
     account = build_scraper_account()
+    
+    # Check if account came from database (not fallback)
+    account_from_db = account["username"] != DEFAULT_USERNAME
+    error_occurred = False
+    
+    # Mark account as occupied if it came from database
+    if account_from_db:
+        mark_account_as_occupied(account["username"])
+    
     try:
         await api.pool.add_account(
             username=account["username"],
@@ -100,6 +131,10 @@ async def main():
         print(f"Account added successfully with cookies!\n")
     except Exception as e:
         print(f"Error adding account: {e}")
+        # Mark account as error if there was an error
+        if account_from_db:
+            mark_account_as_error(account["username"], str(e))
+        error_occurred = True
         return
     
     try:
@@ -108,6 +143,14 @@ async def main():
 
     except Exception as e:
         print(f"Error scraping tweets: {e}")
+        # Mark account as error if there was an error during scraping
+        if account_from_db:
+            mark_account_as_error(account["username"], str(e))
+        error_occurred = True
+    finally:
+        # Mark account as available after scraping is complete (only if no errors occurred)
+        if account_from_db and not error_occurred:
+            mark_account_as_available(account["username"])
 
 
 if __name__ == "__main__":

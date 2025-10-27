@@ -64,6 +64,17 @@ class Database:
         finally:
             conn.close()
 
+    def fetch_query(self, query, values=None):
+        """ Execute a SELECT query and return results """
+        conn = self.conn()
+        try:
+            cursor = self.cursor(conn=conn)
+            cursor.execute(query, values)
+            results = cursor.fetchall()
+            return results
+        finally:
+            conn.close()
+
 
 # Initialize database connection
 db = Database(

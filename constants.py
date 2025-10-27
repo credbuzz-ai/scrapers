@@ -30,3 +30,32 @@ is_verified=VALUES(is_verified), account_created_at=VALUES(account_created_at),
 updated_at=VALUES(updated_at), lifetime_tweets=VALUES(lifetime_tweets), 
 lifetime_views=VALUES(lifetime_views), scraped_by=VALUES(scraped_by)
 """
+
+# Scraper Account Management Queries
+GET_RANDOM_TWITTER_SCRAPER_ACCOUNT_QUERY = """
+SELECT username, cookie, status, is_occupied, lock_time
+FROM configs.twitter_scrapers 
+WHERE status = 'active' 
+AND is_occupied = 0 
+AND (lock_time IS NULL OR lock_time < NOW() - INTERVAL 1 HOUR)
+ORDER BY RAND() 
+LIMIT 1
+"""
+
+MARK_ACCOUNT_AS_OCCUPIED_QUERY = """
+UPDATE configs.twitter_scrapers 
+SET is_occupied = 1, lock_time = NOW(), last_used = NOW()
+WHERE username = %s
+"""
+
+MARK_ACCOUNT_AS_AVAILABLE_QUERY = """
+UPDATE configs.twitter_scrapers 
+SET is_occupied = 0, lock_time = NULL
+WHERE username = %s
+"""
+
+MARK_ACCOUNT_AS_ERROR_QUERY = """
+UPDATE configs.twitter_scrapers 
+SET status = 'error', error_message = %s, is_occupied = 0, lock_time = NULL, updated_at = NOW()
+WHERE username = %s
+"""
